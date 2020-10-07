@@ -5,7 +5,7 @@ from flask_mail import Mail,Message
 from itsdangerous import URLSafeTimedSerializer
 from flask_bcrypt import Bcrypt,generate_password_hash, check_password_hash
 from flask_jwt_extended import JWTManager, create_access_token,jwt_required
-import datetime
+import datetime,random,string
 
 
 app = Flask (__name__)
@@ -27,6 +27,14 @@ mail = Mail(app)
 ts = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
+
+
+
+def generate_password():
+    caracteres= string.ascii_lowercase
+    password = ''.join(random.choice(caracteres) for i in range(10))
+    
+    return password
 
 class Paciente(db.Model):
     id =db.Column (db.Integer,primary_key=True) 
@@ -67,7 +75,7 @@ def create_paciente():
     telefono=request.json['telefono']
     email=request.json['email']
     password=request.json['password']
-    
+
     new_paciente=Paciente(id,nombres,telefono,email,password)
     new_paciente.hash_password()
     try:
@@ -111,7 +119,6 @@ def get_pacientes():
 @app.route('/pacientes/<id>',methods=['GET'])
 def get_paciente(id):
     try:
-
         paciente=Paciente.query.get(id)
         return paciente_schema.jsonify(paciente)    
     except:
@@ -141,7 +148,6 @@ def delete_paciente(id):
         return jsonify({"mensaje":"Ha ocurrido un error5"})
 
 
-
 @app.route('/login',methods=['GET'])
 def check_login():
     email=request.json['email']
@@ -150,10 +156,13 @@ def check_login():
     
     if (paciente):
         if(paciente.confirmed):
-            authorized=paciente.check_password(password)
-            expires = datetime.timedelta(days=7)
-            access_token = create_access_token(identity=str(paciente.id), expires_delta=expires)
-            return jsonify({"token":access_token})
+            if(paciente.check_password(password)):
+                authorized=paciente.check_password(password)
+                expires = datetime.timedelta(days=7)
+                access_token = create_access_token(identity=str(paciente.id), expires_delta=expires)
+                return jsonify({"token":access_token})
+            else:
+                return jsonify({"mensaje":"Clave incorrecta"})            
         else:
             return jsonify({"mensaje":"Usuario no ha verificado registro"})        
     else:
@@ -161,12 +170,29 @@ def check_login():
     
 
 
+@app.route('/resetpassword',methods=['GET'])
+def reset_password():
+    email=request.json['email']
+    paciente=Paciente.query.filter_by(email=email).one_or_none()
+
+    if (paciente):
+        new_password=generate_password()
+        paciente.password=new_password
+        paciente.hash_password()
+        db.session.commit()
+        msg = Message("Hola "+paciente.nombres,
+                sender="arenas782@gmail.com",
+                recipients=["arenas782@gmail.com"])
+        msg.html ='Tu nuevo password es: '+new_password
+        mail.send(msg)
+        return jsonify({"mensaje":"Nuevo password enviado al correo"})    
+    else:
+        return jsonify({"mensaje":"Usuario no encontrado"})
 
 @app.route('/',methods=['GET'])
 @jwt_required
 def index():
     return jsonify({"mensaje":"Bienvenido al API de heippi.com"})
-
 
 
 if __name__ == "__main__":
